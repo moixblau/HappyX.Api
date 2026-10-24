@@ -43,6 +43,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /v1/removals", s.listRemovals)
 	api.HandleFunc("DELETE /v1/removals/{guildID}", s.doneRemoving)
 	api.HandleFunc("GET /v1/guilds/{guildID}/members", s.listMembers)
+	api.HandleFunc("PUT /v1/guilds/{guildID}/members", s.syncMembers)
 	api.HandleFunc("PUT /v1/guilds/{guildID}/members/{userID}", s.joinMember)
 	api.HandleFunc("DELETE /v1/guilds/{guildID}/members/{userID}", s.leaveMember)
 	api.HandleFunc("GET /v1/guilds/{guildID}/members/{userID}/access", s.memberAccess)
@@ -110,7 +111,11 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 const maxBodyBytes = 64 << 10
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	return decodeLimit(w, r, v, maxBodyBytes)
+}
+
+func decodeLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())

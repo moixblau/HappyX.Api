@@ -164,6 +164,7 @@ the round is finished. Nightly database backups still hold erased data until the
 | GET | `/v1/removals` | | Discord IDs of the servers deleted from the dashboard that the bot must leave |
 | DELETE | `/v1/removals/{guildID}` | | the bot has left the server. Until then `POST /v1/guilds` for it answers 410 |
 | GET | `/v1/guilds/{guildID}/members` | | active members; `?with=streak` adds each one's `streak` (days in a row answering, omitted when 0) |
+| PUT | `/v1/guilds/{guildID}/members` | `members`: up to 1000 `{discord_user_id, username, role_ids}` | bulk sync in one transaction: creates or refreshes each member's name and roles, keeping everyone's opt-in state |
 | PUT | `/v1/guilds/{guildID}/members/{userID}` | `username`, `active` (optional), `role_ids` (optional) | create or rename; `active` omitted keeps an existing member's opt-in state, `true` opts in; `role_ids` omitted keeps their Discord roles |
 | DELETE | `/v1/guilds/{guildID}/members/{userID}` | | opt out; `?left=true` when they left the server, which also ends their dashboard access |
 | GET | `/v1/guilds/{guildID}/members/{userID}/access` | | `{level}`: `none`, `view`, `manage` or `owner`, for the bot's admin commands. `?discord_admin=true` when Discord says they own the server or are an Administrator |

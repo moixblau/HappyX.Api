@@ -246,6 +246,30 @@ func (r *MemberRepo) Upsert(ctx context.Context, m domain.Member, setActive *boo
 		m.GuildDiscordID, m.DiscordID, m.Username, setActive, m.RoleIDs))
 }
 
+func (r *MemberRepo) SyncMany(ctx context.Context, guildID string, ms []domain.Member) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }() // a no-op after Commit
+	var gid int64
+	if err := tx.QueryRow(ctx, `SELECT id FROM guilds WHERE discord_id = $1`, guildID).Scan(&gid); err != nil {
+		return notFound(err)
+	}
+	b := &pgx.Batch{}
+	for _, m := range ms {
+		b.Queue(`
+			INSERT INTO members (guild_id, discord_id, username, role_ids) VALUES ($1, $2, $3, $4)
+			ON CONFLICT (guild_id, discord_id) DO UPDATE
+			SET username = EXCLUDED.username, role_ids = EXCLUDED.role_ids, in_server = TRUE, updated_at = now()`,
+			gid, m.DiscordID, m.Username, m.RoleIDs)
+	}
+	if err := tx.SendBatch(ctx, b).Close(); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (r *MemberRepo) Get(ctx context.Context, guildID, userID string) (domain.Member, error) {
 	return scanMember(r.db.QueryRow(ctx, `
 		SELECT `+memberCols+` FROM members m JOIN guilds g ON g.id = m.guild_id

@@ -181,6 +181,43 @@ func (s *Service) UpsertMember(ctx context.Context, guildID, userID, username st
 	return s.members.Upsert(ctx, m, active)
 }
 
+// MaxSyncMembers is how many members one SyncMembers call takes: a page of Discord's member list.
+const MaxSyncMembers = 1000
+
+// SyncMembers registers members or refreshes their usernames and roles in one write, keeping
+// everyone's opt-in state. The bot sends its member list this way when it connects, a page at a
+// time, instead of one request and one commit per member.
+func (s *Service) SyncMembers(ctx context.Context, guildID string, ms []domain.Member) error {
+	if _, err := s.activeGuild(ctx, guildID); err != nil {
+		return err
+	}
+	if len(ms) > MaxSyncMembers {
+		return domain.ValidationError{Reason: fmt.Sprintf("at most %d members per sync", MaxSyncMembers)}
+	}
+	// A member listed twice would make the upsert touch the same row twice; the last one wins.
+	seen := make(map[string]int, len(ms))
+	out := make([]domain.Member, 0, len(ms))
+	for _, m := range ms {
+		m.GuildDiscordID = guildID
+		if err := m.Validate(); err != nil {
+			return err
+		}
+		if m.RoleIDs == nil {
+			m.RoleIDs = []string{}
+		}
+		if i, ok := seen[m.DiscordID]; ok {
+			out[i] = m
+			continue
+		}
+		seen[m.DiscordID] = len(out)
+		out = append(out, m)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return s.members.SyncMany(ctx, guildID, out)
+}
+
 // LeaveMember stops sending the survey to the member. With leftServer they also left the
 // Discord server, which ends any access they had to its dashboard.
 func (s *Service) LeaveMember(ctx context.Context, guildID, userID string, leftServer bool) error {

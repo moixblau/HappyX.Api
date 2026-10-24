@@ -306,6 +306,46 @@ func mustJoin(t *testing.T, svc *usecase.Service, guild, user string) {
 	}
 }
 
+func TestSyncMembers(t *testing.T) {
+	ctx := context.Background()
+	svc := testService(t, time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC))
+	mustRegister(t, svc, guildA)
+	mustRegister(t, svc, guildB)
+	mustJoin(t, svc, guildA, user1)
+	if err := svc.LeaveMember(ctx, guildA, user1, false); err != nil {
+		t.Fatal(err)
+	}
+	role := "400000000000000001"
+	err := svc.SyncMembers(ctx, guildA, []domain.Member{
+		{DiscordID: user1, Username: "renamed", RoleIDs: []string{role}},
+		{DiscordID: user2, Username: "old"},
+		{DiscordID: user2, Username: "new"}, // listed twice: the last one wins
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := svc.UpsertMember(ctx, guildA, user1, "renamed", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Active || len(m.RoleIDs) != 1 || m.RoleIDs[0] != role {
+		t.Fatalf("sync should set the roles and keep the opt-out: %+v", m)
+	}
+	active, err := svc.ListMembers(ctx, guildA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 1 || active[0].DiscordID != user2 || active[0].Username != "new" {
+		t.Fatalf("new members are opted in: %+v", active)
+	}
+	if other, _ := svc.ListMembers(ctx, guildB); len(other) != 0 {
+		t.Fatalf("another guild got members: %+v", other)
+	}
+	if err := svc.SyncMembers(ctx, guildA, []domain.Member{{DiscordID: "nope"}}); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("bad ID: want ErrInvalid, got %v", err)
+	}
+}
+
 func TestClaimDispatchOnce(t *testing.T) {
 	ctx := context.Background()
 	svc := testService(t, time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC))

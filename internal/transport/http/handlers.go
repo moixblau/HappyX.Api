@@ -266,6 +266,33 @@ func (s *Server) joinMember(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, memberDTO{DiscordID: m.DiscordID, Username: m.Username, Active: m.Active, CreatedAt: m.CreatedAt})
 }
 
+// syncMembersMaxBytes fits a full page of members with many roles each.
+const syncMembersMaxBytes = 8 << 20
+
+// syncMembers registers up to 1000 members or refreshes their usernames and roles, keeping
+// everyone's opt-in state. The bot sends its member list this way when it connects.
+func (s *Server) syncMembers(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Members []struct {
+			DiscordID string   `json:"discord_user_id"`
+			Username  string   `json:"username"`
+			RoleIDs   []string `json:"role_ids"`
+		} `json:"members"`
+	}
+	if !decodeLimit(w, r, &in, syncMembersMaxBytes) {
+		return
+	}
+	ms := make([]domain.Member, 0, len(in.Members))
+	for _, m := range in.Members {
+		ms = append(ms, domain.Member{DiscordID: m.DiscordID, Username: m.Username, RoleIDs: m.RoleIDs})
+	}
+	if err := s.svc.SyncMembers(r.Context(), r.PathValue("guildID"), ms); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // leaveMember stops the survey for the member: they paused it or, with ?left=true, they left
 // the server.
 func (s *Server) leaveMember(w http.ResponseWriter, r *http.Request) {
